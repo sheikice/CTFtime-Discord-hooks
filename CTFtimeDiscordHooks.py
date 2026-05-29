@@ -1,5 +1,6 @@
 import argparse
 import requests
+import json
 
 from typing import List, Union
 from datetime import datetime, timedelta
@@ -76,24 +77,40 @@ class CTF:
         return datetime.strptime(time.replace(':', ''), TIME_FORMAT)
 
 
-def get_ctfs(max_ctfs: int, days: int) -> List[CTF]:
+def get_ctfs(max_ctfs: int, days: int, online: bool) -> List[CTF]:
     start = datetime.now()
     end = start + timedelta(days=days)
     url = f'https://ctftime.org/api/v1/events/?limit={max_ctfs}' \
           f'&start={int(start.timestamp())}&finish={int(end.timestamp())}'
+    if online is True:
+        url += '&online=1'
 
-    return [CTF(entry) for entry in requests.get(url, headers={'user-agent': ''}).json()]
+    try:
+        request = requests.get(url, headers={'user-agent': ''})
+        try:
+            entries = request.json()
+        except json.decoder.JSONDecodeError as e:
+            print(f'JSONError: {e} | {request.text} | {request.status_code}')
+            return []
+    except requests.exceptions.RequestException as e:
+        print(f'Error: {e}')
+        return []
+
+    return [CTF(entry) for entry in entries]
 
 
-def build_message(max_ctfs: int, days: int, cache_path: str) -> Union[Hook, None]:
+def build_message(max_ctfs: int, days: int, cache_path: str, online: bool) -> Union[Hook, None]:
     cache = ''
     if cache_path:
         with open(cache_path) as f:
             cache = f.read().strip()
 
-    ctfs = get_ctfs(max_ctfs, days)
+    ctfs = get_ctfs(max_ctfs, days, online)
     embeds = [ctf.generate_embed() for ctf in ctfs]
     ids = ','.join([str(ctf.cid) for ctf in ctfs])
+
+    print('CTFs:', [embed.title for embed in embeds])
+
     if cache == ids:
         return None
     else:
@@ -104,8 +121,8 @@ def build_message(max_ctfs: int, days: int, cache_path: str) -> Union[Hook, None
                     avatar_url=DEFAULT_ICON)
 
 
-def send_updates(webhooks: List[str], max_ctfs: int, days: int, cache_path: str):
-    message = build_message(max_ctfs=max_ctfs, days=days, cache_path=cache_path)
+def send_updates(webhooks: List[str], max_ctfs: int, days: int, cache_path: str, online: bool):
+    message = build_message(max_ctfs=max_ctfs, days=days, cache_path=cache_path, online=online)
     if message is not None:
         for webhook in webhooks:
             message.execute(hook_url=webhook)
@@ -127,6 +144,8 @@ if __name__ == '__main__':
                         help='the maximum number of CTFs that will be sent')
     parser.add_argument('-d', '--days', metavar='number', type=int, default=10,
                         help='days from today to search CTFs within')
+    parser.add_argument('-o', '--online', action='store_true', default=False,
+                        help='filter only online CTFs')
     args = parser.parse_args()
 
     if args.webhooks_file:
@@ -141,4 +160,4 @@ if __name__ == '__main__':
         except FileExistsError:
             pass
 
-    send_updates(webhooks=args_webhooks, max_ctfs=args.max_entries, days=args.days, cache_path=args.cache_file)
+    send_updates(webhooks=args_webhooks, max_ctfs=args.max_entries, days=args.days, cache_path=args.cache_file, online=args.online)
