@@ -82,8 +82,6 @@ def get_ctfs(max_ctfs: int, days: int, online: bool) -> List[CTF]:
     end = start + timedelta(days=days)
     url = f'https://ctftime.org/api/v1/events/?limit={max_ctfs}' \
           f'&start={int(start.timestamp())}&finish={int(end.timestamp())}'
-    if online is True:
-        url += '&online=1'
 
     try:
         request = requests.get(url, headers={'user-agent': ''})
@@ -95,8 +93,11 @@ def get_ctfs(max_ctfs: int, days: int, online: bool) -> List[CTF]:
     except requests.exceptions.RequestException as e:
         print(f'Error: {e}')
         return []
-
-    return [CTF(entry) for entry in entries]
+    all_ctfs = [CTF(entry) for entry in entries]
+    if online:
+        return [ctf for ctf in all_ctfs if ctf.location == 'online']
+    else:
+        return all_ctfs
 
 
 def build_message(max_ctfs: int, days: int, cache_path: str, online: bool) -> Union[Hook, None]:
